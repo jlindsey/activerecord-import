@@ -298,7 +298,9 @@ class ActiveRecord::Base
         my_values = arr.each_with_index.map do |val,j|
           column = columns[j]
           if !sequence_name.blank? && column.name == primary_key && val.nil?
-             connection.next_value_for_sequence(sequence_name)
+            connection.next_value_for_sequence(sequence_name)
+          elsif self.class.serialized_attributes.keys.include? column.name && [:dump, :load].all? { |x| self.class.serialized_attributes[column.name].respond_to?(x) }
+            connection.quote_string(self.class.serialized_attributes[column.name].dump(val))
           else
             connection.quote(column.type_cast(val), column)
           end
