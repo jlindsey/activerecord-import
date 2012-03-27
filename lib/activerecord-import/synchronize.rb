@@ -30,19 +30,31 @@ module ActiveRecord # :nodoc:
       key_values = keys.map { |key| instances.map(&"#{key}".to_sym) }
       keys.zip(key_values).each { |key, values| conditions[key] = values }
       order = keys.map{ |key| "#{key} ASC" }.join(",")
-      
-      klass = instances.first.class
 
-      fresh_instances = klass.find( :all, :conditions=>conditions, :order=>order )
-      instances.each do |instance|
-        matched_instance = fresh_instances.detect do |fresh_instance|
-          keys.all?{ |key| fresh_instance.send(key) == instance.send(key) }
+      klass = instances.first.class
+      sql = klass.scoped.where(conditions).order(order).to_sql
+      fresh_attributes = ActiveRecord::Base.connection.select_all sql
+      
+      sorted_attributes = fresh_attributes.inject({}) do |sum, hash|
+        h = HashWithIndifferentAccess.new hash
+        key_ary = keys.map do |k|
+          col = klass.columns.find { |c| c.name.to_sym == k }
+          col.type_cast h[k]
         end
-        
-        if matched_instance
+        sum[key_ary] = h
+        sum
+      end
+
+      instances.each do |instance|
+        key_ary = keys.map { |k| instance.send(k) }
+        matched_hash = sorted_attributes[key_ary]
+
+        if matched_hash
+          sorted_attributes.delete key_ary
+
           instance.clear_aggregation_cache
           instance.clear_association_cache
-          instance.instance_variable_set '@attributes', matched_instance.attributes
+          instance.instance_variable_set '@attributes', matched_hash
         end
       end
     end
